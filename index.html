@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>외래어 이름 한글 변환기</title>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-dark: #3730a3;
+      --primary-light: #818cf8;
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --error: #ef4444;
+      --shadow: 0 4px 24px rgba(79,70,229,.10);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI','Apple SD Gothic Neo',sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    header {
+      background: linear-gradient(135deg,#3730a3 0%,#4f46e5 50%,#6d28d9 100%);
+      color:#fff; padding:2.5rem 1.5rem 2rem; text-align:center;
+    }
+    header h1 { font-size:1.9rem; font-weight:800; letter-spacing:-.5px; }
+    header p  { margin-top:.5rem; font-size:.95rem; opacity:.85; }
+
+    main { max-width:560px; margin:0 auto; padding:1.75rem 1.25rem 4rem; display:flex; flex-direction:column; gap:1.25rem; }
+
+    .card { background:var(--card); border-radius:16px; padding:1.5rem; box-shadow:var(--shadow); }
+    .card-title { font-size:.78rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.08em; margin-bottom:1rem; }
+
+    /* Input row with inline dropdown */
+    .input-row { display:flex; gap:.5rem; align-items:center; }
+
+    .lang-select {
+      border:2px solid var(--border); border-radius:12px;
+      padding:.7rem .75rem; font-size:.9rem; font-weight:600;
+      background:#fff; color:var(--text); cursor:pointer; outline:none;
+      transition:border-color .2s; white-space:nowrap; flex-shrink:0;
+      appearance:none; -webkit-appearance:none;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2364748b' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat:no-repeat; background-position:right .6rem center;
+      padding-right:2rem;
+    }
+    .lang-select:focus { border-color:var(--primary); }
+
+    .name-input {
+      flex:1; border:2px solid var(--border); border-radius:12px;
+      padding:.75rem 1rem; font-size:1.05rem; outline:none; transition:border-color .2s;
+      min-width:0;
+    }
+    .name-input:focus { border-color:var(--primary); }
+    .name-input::placeholder { color:#b0b8c4; }
+
+    .btn-convert {
+      background:var(--primary); color:#fff; border:none; border-radius:12px;
+      padding:.75rem 1.2rem; font-size:1rem; font-weight:700; cursor:pointer;
+      transition:background .2s,transform .1s; white-space:nowrap; flex-shrink:0;
+    }
+    .btn-convert:hover { background:var(--primary-dark); }
+    .btn-convert:active { transform:scale(.97); }
+
+    /* Hint */
+    .lang-hint { font-size:.8rem; color:var(--text-muted); margin-top:.6rem; }
+
+    /* Error */
+    .error-msg { display:none; background:#fef2f2; border:1.5px solid #fca5a5; border-radius:12px; padding:1rem 1.25rem; color:var(--error); font-size:.9rem; }
+    .error-msg.show { display:block; }
+
+    /* Result */
+    .result-card {
+      display:none; background:linear-gradient(135deg,#eef2ff 0%,#f5f3ff 100%);
+      border:2px solid #c7d2fe; border-radius:20px; padding:2rem 1.5rem; text-align:center;
+      animation:fadeIn .4s ease;
+    }
+    .result-card.show { display:block; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+
+    .result-label { font-size:.78rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:.1em; margin-bottom:.75rem; }
+    .result-korean { font-size:3.2rem; font-weight:900; color:var(--primary-dark); letter-spacing:.05em; line-height:1.1; margin-bottom:.75rem; }
+
+    .syllables { display:flex; justify-content:center; flex-wrap:wrap; gap:.35rem; margin-bottom:1.25rem; }
+    .syllable { background:var(--primary); color:#fff; border-radius:8px; padding:.28rem .65rem; font-size:1.05rem; font-weight:700; }
+    .syllable-sep { color:#a5b4fc; font-size:1.2rem; align-self:center; }
+
+    .result-pronunciation { font-size:1.1rem; color:var(--text-muted); margin-bottom:1.25rem; font-style:italic; }
+    .divider { height:1px; background:#c7d2fe; margin:1rem 0; }
+    .result-explanation { font-size:.88rem; color:var(--text-muted); line-height:1.6; text-align:left; }
+    .result-explanation strong { color:var(--text); }
+
+    footer { text-align:center; color:#a0aec0; font-size:.8rem; margin-top:2rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>외래어 이름 한글 변환기</h1>
+  <p>국립국어원 외래어 표기법에 따라 외국어 이름을 한글로 변환합니다</p>
+</header>
+
+<main>
+  <div class="card">
+    <div class="card-title">이름 입력</div>
+    <div class="input-row">
+      <select class="lang-select" id="langSelect" onchange="onLangChange()">
+        <option value="en">🇺🇸 영어</option>
+        <option value="de">🇩🇪 독일어</option>
+        <option value="fr">🇫🇷 프랑스어</option>
+        <option value="es">🇪🇸 스페인어</option>
+        <option value="it">🇮🇹 이탈리아어</option>
+        <option value="ja">🇯🇵 일본어</option>
+        <option value="zh">🇨🇳 중국어</option>
+      </select>
+      <input type="text" class="name-input" id="nameInput"
+        placeholder="이름을 입력하세요 (예: Michael)"
+        onkeydown="if(event.key==='Enter')convert()" />
+      <button class="btn-convert" onclick="convert()">변환</button>
+    </div>
+    <div class="lang-hint" id="langHint">영어 이름을 로마자로 입력하세요</div>
+  </div>
+
+  <div class="error-msg" id="errorMsg"></div>
+
+  <div class="result-card" id="resultCard">
+    <div class="result-label" id="resultLang"></div>
+    <div class="result-korean" id="resultKorean"></div>
+    <div class="syllables" id="resultSyllables"></div>
+    <div class="result-pronunciation" id="resultPronunciation"></div>
+    <div class="divider"></div>
+    <div class="result-explanation" id="resultExplanation"></div>
+  </div>
+
+  <footer>국립국어원 외래어 표기법 기준 · 규칙 기반 변환</footer>
+</main>
+
+<script>
+// ================================================================
+// Korean syllable assembly utilities
+// ================================================================
+const _CHO  = {ㄱ:0,ㄲ:1,ㄴ:2,ㄷ:3,ㄸ:4,ㄹ:5,ㅁ:6,ㅂ:7,ㅃ:8,ㅅ:9,ㅆ:10,ㅇ:11,ㅈ:12,ㅉ:13,ㅊ:14,ㅋ:15,ㅌ:16,ㅍ:17,ㅎ:18};
+const _JUNG = {ㅏ:0,ㅐ:1,ㅑ:2,ㅒ:3,ㅓ:4,ㅔ:5,ㅕ:6,ㅖ:7,ㅗ:8,ㅘ:9,ㅙ:10,ㅚ:11,ㅛ:12,ㅜ:13,ㅝ:14,ㅞ:15,ㅟ:16,ㅠ:17,ㅡ:18,ㅢ:19,ㅣ:20};
+const _JONG = {ㄱ:1,ㄲ:2,ㄳ:3,ㄴ:4,ㄵ:5,ㄶ:6,ㄷ:7,ㄹ:8,ㄺ:9,ㄻ:10,ㄼ:11,ㄽ:12,ㄾ:13,ㄿ:14,ㅀ:15,ㅁ:16,ㅂ:17,ㅄ:18,ㅅ:19,ㅆ:20,ㅇ:21,ㅈ:22,ㅊ:23,ㅋ:24,ㅌ:25,ㅍ:26,ㅎ:27};
+
+// Make a Korean syllable block
+function _syl(cho, jung, jong) {
+  const c = _CHO[cho] ?? 11;
+  const v = _JUNG[jung];
+  if (v === undefined) return (cho||'') + (jung||'');
+  const j = jong ? (_JONG[jong] ?? 0) : 0;
+  return String.fromCharCode(0xAC00 + (c*21+v)*28+j);
+}
+
+// Add coda to last syllable of a string
+function _addCoda(s, j) {
+  if (!s || !j) return s;
+  const last = s.charCodeAt(s.length-1);
+  if (last < 0xAC00 || last > 0xD7A3) return s;
+  const base = last - 0xAC00;
+  if (base % 28 !== 0) return s; // already has coda
+  const ji = _JONG[j];
+  if (!ji) return s;
+  return s.slice(0,-1) + String.fromCharCode(last + ji);
+}
+
+// Assemble phoneme tokens → Korean string
+// Tokens: {t:'v',k:'ㅏ'} vowel | {t:'c',k:'ㄱ'} consonant | {t:'pre',k:'가'} pre-built | {t:'sp'} space | {t:'coda',k:'ㄴ'} explicit coda
+// noCoda=true: consecutive consonants always get 으 buffer (for Romance/Germanic langs)
+function _assemble(toks, noCoda = false) {
+  let out = '', buf = null; // buf = pending consonant jamo
+  for (const p of toks) {
+    if (p.t === 'sp') {
+      if (buf) { out += _syl(buf,'ㅡ'); buf = null; }
+      out += ' ';
+    } else if (p.t === 'pre') {
+      if (buf) { out += _syl(buf,'ㅡ'); buf = null; }
+      out += p.k;
+    } else if (p.t === 'v') {
+      out += _syl(buf||'ㅇ', p.k);
+      buf = null;
+    } else if (p.t === 'c') {
+      if (buf) {
+        if (!noCoda && out && _JONG[buf]) out = _addCoda(out, buf);
+        else out += _syl(buf,'ㅡ');
+        buf = null;
+      }
+      buf = p.k;
+    } else if (p.t === 'coda') {
+      if (buf) { out += _syl(buf,'ㅡ'); buf = null; }
+      if (out) out = _addCoda(out, p.k);
+    }
+  }
+  if (buf) {
+    if (!noCoda && out && _JONG[buf]) out = _addCoda(out, buf);
+    else out += _syl(buf,'ㅡ');
+  }
+  return out;
+}
+
+// ================================================================
+// JAPANESE ENGINE
+// ================================================================
+// Each entry: kana → [initial_position, non-initial_position]
+// か行 어두=가기구게고, 어중=카키쿠케코 / た행 어두=다/지/쓰/데/도, 어중=타/치/쓰/테/토
+const KANA = {
+  'あ':['아','아'],'ア':['아','아'],'い':['이','이'],'イ':['이','이'],
+  'う':['우','우'],'ウ':['우','우'],'え':['에','에'],'エ':['에','에'],
+  'お':['오','오'],'オ':['오','오'],
+  'か':['가','카'],'カ':['가','카'],'き':['기','키'],'キ':['기','키'],
+  'く':['구','쿠'],'ク':['구','쿠'],'け':['게','케'],'ケ':['게','케'],
+  'こ':['고','코'],'コ':['고','코'],
+  'さ':['사','사'],'サ':['사','사'],'し':['시','시'],'シ':['시','시'],
+  'す':['스','스'],'ス':['스','스'],'せ':['세','세'],'セ':['세','세'],
+  'そ':['소','소'],'ソ':['소','소'],
+  'た':['다','타'],'タ':['다','타'],'ち':['지','치'],'チ':['지','치'],
+  'つ':['쓰','쓰'],'ツ':['쓰','쓰'],'て':['데','테'],'テ':['데','테'],
+  'と':['도','토'],'ト':['도','토'],
+  'な':['나','나'],'ナ':['나','나'],'に':['니','니'],'ニ':['니','니'],
+  'ぬ':['누','누'],'ヌ':['누','누'],'ね':['네','네'],'ネ':['네','네'],
+  'の':['노','노'],'ノ':['노','노'],
+  'は':['하','하'],'ハ':['하','하'],'ひ':['히','히'],'ヒ':['히','히'],
+  'ふ':['후','후'],'フ':['후','후'],'へ':['헤','헤'],'ヘ':['헤','헤'],
+  'ほ':['호','호'],'ホ':['호','호'],
+  'ま':['마','마'],'マ':['마','마'],'み':['미','미'],'ミ':['미','미'],
+  'む':['무','무'],'ム':['무','무'],'め':['메','메'],'メ':['메','메'],
+  'も':['모','모'],'モ':['모','모'],
+  'や':['야','야'],'ヤ':['야','야'],'ゆ':['유','유'],'ユ':['유','유'],
+  'よ':['요','요'],'ヨ':['요','요'],
+  'ら':['라','라'],'ラ':['라','라'],'り':['리','리'],'リ':['리','리'],
+  'る':['루','루'],'ル':['루','루'],'れ':['레','레'],'レ':['레','레'],
+  'ろ':['로','로'],'ロ':['로','로'],
+  'わ':['와','와'],'ワ':['와','와'],'を':['오','오'],'ヲ':['오','오'],
+  // 濁音 (both positions same)
+  'が':['가','가'],'ガ':['가','가'],'ぎ':['기','기'],'ギ':['기','기'],
+  'ぐ':['구','구'],'グ':['구','구'],'げ':['게','게'],'ゲ':['게','게'],
+  'ご':['고','고'],'ゴ':['고','고'],
+  'ざ':['자','자'],'ザ':['자','자'],'じ':['지','지'],'ジ':['지','지'],
+  'ず':['즈','즈'],'ズ':['즈','즈'],'ぜ':['제','제'],'ゼ':['제','제'],
+  'ぞ':['조','조'],'ゾ':['조','조'],
+  'だ':['다','다'],'ダ':['다','다'],'ぢ':['지','지'],'ヂ':['지','지'],
+  'づ':['즈','즈'],'ヅ':['즈','즈'],'で':['데','데'],'デ':['데','데'],
+  'ど':['도','도'],'ド':['도','도'],
+  'ば':['바','바'],'バ':['바','바'],'び':['비','비'],'ビ':['비','비'],
+  'ぶ':['부','부'],'ブ':['부','부'],'べ':['베','베'],'ベ':['베','베'],
+  'ぼ':['보','보'],'ボ':['보','보'],
+  // 半濁音
+  'ぱ':['파','파'],'パ':['파','파'],'ぴ':['피','피'],'ピ':['피','피'],
+  'ぷ':['푸','푸'],'プ':['푸','푸'],'ぺ':['페','페'],'ペ':['페','페'],
+  'ぽ':['포','포'],'ポ':['포','포'],
+  // 拗音 compound morae (2-char keys, both positions same)
+  'きゃ':['캬','캬'],'キャ':['캬','캬'],'きゅ':['큐','큐'],'キュ':['큐','큐'],'きょ':['쿄','쿄'],'キョ':['쿄','쿄'],
+  'ぎゃ':['갸','갸'],'ギャ':['갸','갸'],'ぎゅ':['규','규'],'ギュ':['규','규'],'ぎょ':['교','교'],'ギョ':['교','교'],
+  'しゃ':['샤','샤'],'シャ':['샤','샤'],'しゅ':['슈','슈'],'シュ':['슈','슈'],'しょ':['쇼','쇼'],'ショ':['쇼','쇼'],
+  'じゃ':['자','자'],'ジャ':['자','자'],'じゅ':['주','주'],'ジュ':['주','주'],'じょ':['조','조'],'ジョ':['조','조'],
+  'ちゃ':['차','차'],'チャ':['차','차'],'ちゅ':['추','추'],'チュ':['추','추'],'ちょ':['초','초'],'チョ':['초','초'],
+  'にゃ':['냐','냐'],'ニャ':['냐','냐'],'にゅ':['뉴','뉴'],'ニュ':['뉴','뉴'],'にょ':['뇨','뇨'],'ニョ':['뇨','뇨'],
+  'ひゃ':['햐','햐'],'ヒャ':['햐','햐'],'ひゅ':['휴','휴'],'ヒュ':['휴','휴'],'ひょ':['효','효'],'ヒョ':['효','효'],
+  'びゃ':['뱌','뱌'],'ビャ':['뱌','뱌'],'びゅ':['뷰','뷰'],'ビュ':['뷰','뷰'],'びょ':['뵤','뵤'],'ビョ':['뵤','뵤'],
+  'ぴゃ':['퍄','퍄'],'ピャ':['퍄','퍄'],'ぴゅ':['퓨','퓨'],'ピュ':['퓨','퓨'],'ぴょ':['표','표'],'ピョ':['표','표'],
+  'みゃ':['먀','먀'],'ミャ':['먀','먀'],'みゅ':['뮤','뮤'],'ミュ':['뮤','뮤'],'みょ':['묘','묘'],'ミョ':['묘','묘'],
+  'りゃ':['랴','랴'],'リャ':['랴','랴'],'りゅ':['류','류'],'リュ':['류','류'],'りょ':['료','료'],'リョ':['료','료'],
+};
+
+// Romaji → Katakana (longest match first)
+const ROMAJI_KANA = [
+  ['sha','シャ'],['shi','シ'],['shu','シュ'],['sho','ショ'],
+  ['chi','チ'],['cha','チャ'],['chu','チュ'],['cho','チョ'],['tchi','ッチ'],
+  ['tsu','ツ'],['dzu','ヅ'],
+  ['kya','キャ'],['kyu','キュ'],['kyo','キョ'],
+  ['gya','ギャ'],['gyu','ギュ'],['gyo','ギョ'],
+  ['nya','ニャ'],['nyu','ニュ'],['nyo','ニョ'],
+  ['hya','ヒャ'],['hyu','ヒュ'],['hyo','ヒョ'],
+  ['bya','ビャ'],['byu','ビュ'],['byo','ビョ'],
+  ['pya','ピャ'],['pyu','ピュ'],['pyo','ピョ'],
+  ['mya','ミャ'],['myu','ミュ'],['myo','ミョ'],
+  ['rya','リャ'],['ryu','リュ'],['ryo','リョ'],
+  ['ja','ジャ'],['ji','ジ'],['ju','ジュ'],['jo','ジョ'],
+  ['ka','カ'],['ki','キ'],['ku','ク'],['ke','ケ'],['ko','コ'],
+  ['ga','ガ'],['gi','ギ'],['gu','グ'],['ge','ゲ'],['go','ゴ'],
+  ['sa','サ'],['si','シ'],['su','ス'],['se','セ'],['so','ソ'],
+  ['za','ザ'],['zi','ジ'],['zu','ズ'],['ze','ゼ'],['zo','ゾ'],
+  ['ta','タ'],['ti','チ'],['tu','ツ'],['te','テ'],['to','ト'],
+  ['da','ダ'],['di','ヂ'],['du','ヅ'],['de','デ'],['do','ド'],
+  ['na','ナ'],['ni','ニ'],['nu','ヌ'],['ne','ネ'],['no','ノ'],
+  ['ha','ハ'],['hi','ヒ'],['fu','フ'],['hu','フ'],['he','ヘ'],['ho','ホ'],
+  ['ba','バ'],['bi','ビ'],['bu','ブ'],['be','ベ'],['bo','ボ'],
+  ['pa','パ'],['pi','ピ'],['pu','プ'],['pe','ペ'],['po','ポ'],
+  ['ma','マ'],['mi','ミ'],['mu','ム'],['me','メ'],['mo','モ'],
+  ['ya','ヤ'],['yu','ユ'],['yo','ヨ'],
+  ['ra','ラ'],['ri','リ'],['ru','ル'],['re','レ'],['ro','ロ'],
+  ['wa','ワ'],['wi','ウィ'],['we','ウェ'],['wo','ヲ'],
+  ['a','ア'],['i','イ'],['u','ウ'],['e','エ'],['o','オ'],
+  ['n','ン'],
+];
+
+function romajiToKatakana(str) {
+  let s = str.toLowerCase(), out = '', i = 0;
+  while (i < s.length) {
+    // Handle double consonants → ッ
+    if (i+1 < s.length && s[i] === s[i+1] && !'aeioun'.includes(s[i])) {
+      out += 'ッ'; i++; continue;
+    }
+    let matched = false;
+    for (const [rom, kana] of ROMAJI_KANA) {
+      if (s.startsWith(rom, i)) { out += kana; i += rom.length; matched = true; break; }
+    }
+    if (!matched) { out += s[i]; i++; }
+  }
+  return out;
+}
+
+function transJapanese(input) {
+  // If no kana, try romaji conversion
+  const hasKana = /[\u3040-\u30FF]/.test(input);
+  const str = hasKana ? input : romajiToKatakana(input);
+
+  let out = '', isFirst = true;
+  const rules = [];
+  let i = 0;
+  while (i < str.length) {
+    const c = str[i], n = str[i+1] || '';
+    // Long vowel mark → skip
+    if (c === 'ー' || c === '\u30FC') { i++; continue; }
+    // Long vowel detection (う after お-ending syllable, い after え-ending syllable)
+    if (!isFirst && c === 'う' || c === 'ウ') {
+      const prev = out ? out[out.length-1] : '';
+      const prevCode = prev ? prev.charCodeAt(0) : 0;
+      if (prevCode >= 0xAC00) {
+        const jung = Math.floor((prevCode - 0xAC00) / 28) % 21;
+        if (jung === 8 || jung === 12) { i++; continue; } // ㅗ or ㅛ → long o, skip う
+      }
+    }
+    if (!isFirst && (c === 'い' || c === 'イ')) {
+      const prev = out ? out[out.length-1] : '';
+      const prevCode = prev ? prev.charCodeAt(0) : 0;
+      if (prevCode >= 0xAC00) {
+        const jung = Math.floor((prevCode - 0xAC00) / 28) % 21;
+        if (jung === 5 || jung === 7) { i++; continue; } // ㅔ or ㅖ → long e, skip い
+      }
+    }
+    // 촉음 → ㅅ 받침 (unified per 외래어 표기법)
+    if (c === 'っ' || c === 'ッ') {
+      out = _addCoda(out, 'ㅅ'); i++; continue;
+    }
+    // 발음 ん/ン
+    if (c === 'ん' || c === 'ン') {
+      // Before ば/ぱ/ま row → ㅁ, else ㄴ
+      const baRow = new Set(['ば','び','ぶ','べ','ぼ','バ','ビ','ブ','ベ','ボ','ま','み','む','め','も','マ','ミ','ム','メ','モ']);
+      const coda = baRow.has(n) ? 'ㅁ' : 'ㄴ';
+      out = _addCoda(out, coda); i++; continue;
+    }
+    // 2-char compound mora
+    if (i+1 < str.length) {
+      const two = c + n;
+      if (KANA[two]) {
+        out += KANA[two][isFirst ? 0 : 1];
+        isFirst = false; i += 2; continue;
+      }
+    }
+    // Single kana
+    if (KANA[c]) {
+      out += KANA[c][isFirst ? 0 : 1];
+      isFirst = false; i++; continue;
+    }
+    // Space
+    if (c === ' ') { isFirst = true; out += ' '; i++; continue; }
+    out += c; i++;
+  }
+  return out;
+}
+
+// ================================================================
+// CHINESE ENGINE (Pinyin)
+// ================================================================
+const ZH_PINYIN = {
+  // b-
+  'ba':'바','bai':'바이','ban':'반','bang':'방','bao':'바오','bei':'베이','ben':'번','beng':'벙',
+  'bi':'비','bian':'볜','biao':'뱌오','bie':'볘','bin':'빈','bing':'빙','bo':'보','bu':'부',
+  // p-
+  'pa':'파','pai':'파이','pan':'판','pang':'팡','pao':'파오','pei':'페이','pen':'펀','peng':'펑',
+  'pi':'피','pian':'편','piao':'퍄오','pie':'폐','pin':'핀','ping':'핑','po':'포','pu':'푸',
+  // m-
+  'ma':'마','mai':'마이','man':'만','mang':'망','mao':'마오','mei':'메이','men':'먼','meng':'멍',
+  'mi':'미','mian':'몐','miao':'먀오','mie':'몌','min':'민','ming':'밍','mo':'모','mou':'머우','mu':'무',
+  // f-
+  'fa':'파','fan':'판','fang':'팡','fei':'페이','fen':'펀','feng':'펑','fo':'포','fou':'포우','fu':'푸',
+  // d-
+  'da':'다','dai':'다이','dan':'단','dang':'당','dao':'다오','de':'더','dei':'데이','den':'던','deng':'덩',
+  'di':'디','dian':'뎬','diao':'댜오','die':'뎨','ding':'딩','diu':'디우','dong':'둥','dou':'더우',
+  'du':'두','duan':'돤','dui':'뒤','dun':'둔','duo':'뒤오',
+  // t-
+  'ta':'타','tai':'타이','tan':'탄','tang':'탕','tao':'타오','te':'터','teng':'텅',
+  'ti':'티','tian':'톈','tiao':'탸오','tie':'톄','ting':'팅','tong':'퉁','tou':'터우',
+  'tu':'투','tuan':'퇀','tui':'퉤','tun':'툰','tuo':'퉈',
+  // n-
+  'na':'나','nai':'나이','nan':'난','nang':'낭','nao':'나오','ne':'너','nei':'네이','nen':'넌','neng':'넝',
+  'ni':'니','nian':'년','niang':'냥','niao':'냐오','nie':'녜','nin':'닌','ning':'닝',
+  'niu':'니우','nong':'눙','nou':'너우','nu':'누','nuan':'놘','nüe':'뉴에','nun':'눈','nuo':'눠',
+  // l-
+  'la':'라','lai':'라이','lan':'란','lang':'랑','lao':'라오','le':'러','lei':'레이','leng':'렁',
+  'li':'리','lia':'랴','lian':'롄','liang':'량','liao':'랴오','lie':'례','lin':'린','ling':'링',
+  'liu':'리우','long':'룽','lou':'러우','lu':'루','luan':'롼','lüe':'뤼에','lun':'룬','luo':'뤄',
+  // g-
+  'ga':'가','gai':'가이','gan':'간','gang':'강','gao':'가오','ge':'거','gei':'게이','gen':'건','geng':'겅',
+  'gong':'궁','gou':'거우','gu':'구','gua':'과','guai':'과이','guan':'관','guang':'광','gui':'궤이','gun':'군','guo':'궈',
+  // k-
+  'ka':'카','kai':'카이','kan':'칸','kang':'캉','kao':'카오','ke':'커','ken':'컨','keng':'컹',
+  'kong':'쿵','kou':'커우','ku':'쿠','kua':'콰','kuai':'콰이','kuan':'콴','kuang':'쾅','kui':'퀘이','kun':'쿤','kuo':'쿼',
+  // h-
+  'ha':'하','hai':'하이','han':'한','hang':'항','hao':'하오','he':'허','hei':'헤이','hen':'헌','heng':'헝',
+  'hong':'훙','hou':'허우','hu':'후','hua':'화','huai':'화이','huan':'환','huang':'황','hui':'훼이','hun':'훈','huo':'훠',
+  // j- (ㅈ + 운모, j+i계 운모 → ㅑㅖㅛㅠ→ㅏㅔㅗㅜ 변환)
+  'ji':'지','jia':'쟈→자','jian':'졘→젠','jiang':'쟝→장','jiao':'쟈오→자오','jie':'졔→제','jin':'진',
+  'jing':'징','jiong':'죵→종','jiu':'지우','ju':'쥐→주','juan':'죤→준','jue':'줴→줴→줴','jun':'쥔→준',
+  // q- (ㅊ, 같은 변환 규칙)
+  'qi':'치','qia':'챠→차','qian':'쳰→천','qiang':'챵→창','qiao':'챠오→차오','qie':'쳬→체','qin':'친',
+  'qing':'칭','qiong':'쳥→총','qiu':'치우','qu':'취→추','quan':'촨→천','que':'취에→체','qun':'췬→춘',
+  // x- (ㅅ, 같은 변환 규칙)
+  'xi':'시','xia':'샤','xian':'셴→선','xiang':'샹','xiao':'샤오','xie':'셰→세','xin':'신',
+  'xing':'싱','xiong':'슝→숑','xiu':'시우','xu':'쉬→쉬','xuan':'쉬안→쉬안','xue':'쉬에→쉬에','xun':'쉰→쉰',
+  // zh- (즈 계열)
+  'zha':'자','zhai':'자이','zhan':'잔','zhang':'장','zhao':'자오','zhe':'저','zhei':'제이','zhen':'전','zheng':'정',
+  'zhi':'즈','zhong':'중','zhou':'저우','zhu':'주','zhua':'좌','zhuai':'좌이','zhuan':'좐','zhuang':'좡','zhui':'줴이','zhun':'준','zhuo':'줘',
+  // ch- (츠 계열)
+  'cha':'차','chai':'차이','chan':'찬','chang':'창','chao':'차오','che':'처','chen':'천','cheng':'청',
+  'chi':'츠','chong':'충','chou':'처우','chu':'추','chua':'촤','chuai':'촤이','chuan':'촨','chuang':'촹','chui':'췌이','chun':'춘','chuo':'춰',
+  // sh-
+  'sha':'샤','shai':'샤이','shan':'산','shang':'상','shao':'샤오','she':'셔','shei':'셰이','shen':'선','sheng':'성',
+  'shi':'스','shou':'셔우','shu':'수','shua':'솨','shuai':'솨이','shuan':'솬','shuang':'솽','shui':'쉐이','shun':'순','shuo':'숴',
+  // r-
+  'ran':'란','rang':'랑','rao':'라오','re':'러','ren':'런','reng':'렁','ri':'르','rong':'룽','rou':'러우',
+  'ru':'루','rua':'롸','ruan':'롼','rui':'뤠이','run':'룬','ruo':'뤄',
+  // z-
+  'za':'자','zai':'자이','zan':'잔','zang':'장','zao':'자오','ze':'저','zei':'제이','zen':'전','zeng':'정',
+  'zi':'쯔','zong':'쭝','zou':'저우','zu':'주','zuan':'좐','zui':'줴이','zun':'준','zuo':'줘',
+  // c-
+  'ca':'차','cai':'차이','can':'찬','cang':'창','cao':'차오','ce':'처','cen':'천','ceng':'청',
+  'ci':'츠','cong':'총','cou':'처우','cu':'추','cuan':'촨','cui':'췌이','cun':'춘','cuo':'춰',
+  // s-
+  'sa':'사','sai':'사이','san':'산','sang':'상','sao':'사오','se':'서','sen':'선','seng':'성',
+  'si':'쓰','song':'숭','sou':'서우','su':'수','suan':'솬','sui':'쉐이','sun':'순','suo':'숴',
+  // Standalone vowels
+  'a':'아','ai':'아이','an':'안','ang':'앙','ao':'아오',
+  'e':'어','ei':'에이','en':'언','eng':'엉','er':'얼',
+  'o':'오','ou':'어우',
+  'yi':'이','ya':'야','yao':'야오','ye':'예','you':'여우','yan':'옌','yin':'인','yun':'윈',
+  'yang':'양','ying':'잉','yong':'융','yuan':'위안','yue':'위에',
+  'wu':'우','wa':'와','wai':'와이','wan':'완','wang':'왕','wei':'웨이','wen':'원','weng':'웡','wo':'워',
+  'yu':'위','yü':'위',
+};
+
+// Apply ㅈ/ㅊ/ㅅ + y-vowel rule and post-process raw values
+const ZH_FIX = {'쟈':'자','졘':'젠','쟝':'장','쟈오':'자오','졔':'제','죵':'종','죤':'준',
+  '쥰':'준','챠':'차','쳰':'천','챵':'창','챠오':'차오','쳬':'체','쳥':'총','촨':'천',
+  '취에':'체','췬':'춘','셴':'선','쉬안':'쉬안','쉬에':'쉬에','쉰':'쉰','슝':'숑'};
+
+function transChineseRaw(pinyin) {
+  // Remove tone numbers/marks
+  const s = pinyin.toLowerCase()
+    .replace(/[āáǎà]/g,'a').replace(/[ēéěè]/g,'e').replace(/[īíǐì]/g,'i')
+    .replace(/[ōóǒò]/g,'o').replace(/[ūúǔù]/g,'u').replace(/[ǖǘǚǜ]/g,'ü')
+    .replace(/[1-5]/g,'').replace(/ü/g,'v');
+  // v → ü equivalent (common input method)
+  const normalized = s.replace(/v/g,'ü');
+  const words = normalized.split(/\s+/);
+  const results = [];
+  for (const word of words) {
+    // Split into syllables (greedy longest match)
+    const sylMap = ZH_PINYIN;
+    let i = 0, out = '';
+    while (i < word.length) {
+      let matched = false;
+      for (let len = Math.min(6, word.length - i); len >= 1; len--) {
+        const slice = word.slice(i, i+len);
+        if (sylMap[slice]) {
+          let val = sylMap[slice];
+          // Apply post-processing fix
+          val = ZH_FIX[val] || val;
+          out += val;
+          i += len;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) { out += word[i]; i++; }
+    }
+    results.push(out);
+  }
+  return results.join(' ');
+}
+
+// ================================================================
+// LATIN LANGUAGE ENGINE (shared phoneme assembly)
+// ================================================================
+const VOW_SET = new Set('aeiouàáâãäåèéêëìíîïòóôõöùúûüýæœ');
+const BASIC_VOW = {a:'ㅏ',e:'ㅔ',i:'ㅣ',o:'ㅗ',u:'ㅜ'};
+
+// Normalize accented vowels to base
+function normVow(c) {
+  if ('àáâãä'.includes(c)) return 'a';
+  if ('èéêë'.includes(c)) return 'e';
+  if ('ìíîï'.includes(c)) return 'i';
+  if ('òóôõö'.includes(c)) return 'o';
+  if ('ùúûü'.includes(c)) return 'u';
+  if ('ý'.includes(c)) return 'i';
+  if ('æ'.includes(c)) return 'e';
+  if ('œ'.includes(c)) return 'e';
+  return c;
+}
+
+function isVow(c) { return VOW_SET.has(c) || 'aeiou'.includes(c); }
+
+// SPANISH tokenizer
+function tokenizeES(input) {
+  // Normalize accented vowels (keep ñ as-is)
+  const s = input.toLowerCase()
+    .replace(/[áàâã]/g,'a').replace(/[éèêë]/g,'e')
+    .replace(/[íìîï]/g,'i').replace(/[óòôõ]/g,'o')
+    .replace(/[úùûü]/g,'u').replace(/ý/g,'i');
+  const toks = [], len = s.length;
+  let i = 0;
+  while (i < len) {
+    const c = s[i], n = s[i+1]||'', nn = s[i+2]||'';
+    if (c === ' ' || c === '-') { toks.push({t:'sp'}); i++; continue; }
+    const two = c+n;
+    if (two === 'ch') { toks.push({t:'c',k:'ㅊ'}); i+=2; continue; }
+    if (two === 'll') {
+      const yv = {a:'ㅑ',e:'ㅖ',i:'ㅣ',o:'ㅛ',u:'ㅠ'}[normVow(nn)];
+      if (yv && i+2 < len) { toks.push({t:'v',k:yv}); i+=3; continue; }
+      toks.push({t:'v',k:'ㅣ'}); i+=2; continue;
+    }
+    if (two === 'rr') { toks.push({t:'c',k:'ㄹ'}); i+=2; continue; }
+    if (two === 'qu') { toks.push({t:'c',k:'ㅋ'}); i+=2; continue; }
+    if (two === 'gu' && (nn==='e'||nn==='i')) { toks.push({t:'c',k:'ㄱ'}); i+=2; continue; }
+    if (c === 'ñ') {
+      const yv = {a:'ㅑ',e:'ㅖ',i:'ㅣ',o:'ㅛ',u:'ㅠ'}[normVow(n)];
+      if (yv) { toks.push({t:'pre',k:_syl('ㄴ',yv)}); i+=2; continue; }
+      toks.push({t:'c',k:'ㄴ'}); i++; continue;
+    }
+    if (isVow(c)) { toks.push({t:'v',k:BASIC_VOW[normVow(c)]||'ㅏ'}); i++; continue; }
+    if (c === 'h') { i++; continue; }
+    if (c === 'j') { toks.push({t:'c',k:'ㅎ'}); i++; continue; }
+    if (c === 'c') {
+      toks.push({t:'c',k:(n==='e'||n==='i')?'ㅅ':'ㅋ'}); i++; continue;
+    }
+    if (c === 'g') {
+      toks.push({t:'c',k:(n==='e'||n==='i')?'ㅎ':'ㄱ'}); i++; continue;
+    }
+    if (c === 'y') {
+      const yv = {a:'ㅑ',e:'ㅖ',i:'ㅣ',o:'ㅛ',u:'ㅠ'}[normVow(n)];
+      if (yv) { toks.push({t:'v',k:yv}); i+=2; continue; }
+      toks.push({t:'v',k:'ㅣ'}); i++; continue;
+    }
+    if (c === 'w') {
+      const wv = {a:'ㅘ',e:'ㅞ',i:'ㅢ',o:'ㅗ',u:'ㅜ'}[normVow(n)];
+      if (wv) { toks.push({t:'v',k:wv}); i+=2; continue; }
+      toks.push({t:'v',k:'ㅜ'}); i++; continue;
+    }
+    if (c === 'l') {
+      if (isVow(n)) { toks.push({t:'coda',k:'ㄹ'}); toks.push({t:'c',k:'ㄹ'}); i++; continue; }
+      toks.push({t:'coda',k:'ㄹ'}); i++; continue;
+    }
+    if (c === 'n') {
+      if (isVow(n)) { toks.push({t:'c',k:'ㄴ'}); i++; continue; }
+      toks.push({t:'coda',k:'ㄴ'}); i++; continue;
+    }
+    const last = i === len-1 || s[i+1]===' ';
+    const cm = {b:'ㅂ',d:'ㄷ',f:'ㅍ',k:'ㅋ',m:'ㅁ',p:'ㅍ',r:'ㄹ',s:'ㅅ',t:'ㅌ',v:'ㅂ',x:'ㅅ',z:'ㅅ'};
+    if (cm[c]) {
+      if (last && 'sz'.includes(c)) { toks.push({t:'coda',k:{s:'ㅅ',z:'ㅅ'}[c]}); i++; continue; }
+      toks.push({t:'c',k:cm[c]}); i++; continue;
+    }
+    toks.push({t:'pre',k:c}); i++;
+  }
+  return toks;
+}
+
+// ITALIAN tokenizer
+function tokenizeIT(input) {
+  const s = input.toLowerCase()
+    .replace(/[áàâãä]/g,'a').replace(/[éèêë]/g,'e')
+    .replace(/[íìîï]/g,'i').replace(/[óòôõö]/g,'o')
+    .replace(/[úùûü]/g,'u').replace(/ý/g,'i');
+  const toks = [], len = s.length;
+  let i = 0;
+  while (i < len) {
+    const c = s[i], n = s[i+1]||'', nn = s[i+2]||'';
+    if (c === ' ' || c === '-') { toks.push({t:'sp'}); i++; continue; }
+    const two = c+n, three = c+n+nn;
+    if (three === 'gli') { toks.push({t:'pre',k:'ㄹ리'}); /* handle as prefix */ i+=3; continue; }
+    if (two === 'gl' && isVow(nn)) { toks.push({t:'c',k:'ㄹ'}); i+=2; continue; }
+    if (two === 'gl') { toks.push({t:'pre',k:'글'}); i+=2; continue; }
+    if (two === 'gn') {
+      const yv = {a:'ㅑ',e:'ㅖ',i:'ㅣ',o:'ㅛ',u:'ㅠ'}[normVow(nn)];
+      if (yv) { toks.push({t:'pre',k:_syl('ㄴ',yv)}); i+=3; continue; }
+      toks.push({t:'c',k:'ㄴ'}); i+=2; continue;
+    }
+    if (three === 'sci') { toks.push({t:'pre',k:'시'}); i+=3; continue; }
+    if (two === 'sc' && (nn==='e')) { toks.push({t:'pre',k:'셰'}); i+=3; continue; }
+    if (two === 'sc') { toks.push({t:'c',k:'ㅅ'}); toks.push({t:'c',k:'ㅋ'}); i+=2; continue; }
+    if (two === 'ch') { toks.push({t:'c',k:'ㅋ'}); i+=2; continue; }
+    if (two === 'gh') { toks.push({t:'c',k:'ㄱ'}); i+=2; continue; }
+    if (two === 'qu') { toks.push({t:'c',k:'ㅋ'}); i+=2; continue; }
+    if (c === 'c' && (n==='i'||n==='e') && isVow(nn) && n!=='h') {
+      const cv = {a:'ㅑ',e:'ㅖ',i:'ㅣ',o:'ㅛ',u:'ㅠ'}[normVow(n)]; // cia→쟈, not used
+      toks.push({t:'c',k:'ㅈ'}); i++; continue;
+    }
+    if (c === 'c' && (n==='e'||n==='i')) { toks.push({t:'c',k:'ㅊ'}); i++; continue; }
+    if (c === 'g' && (n==='e'||n==='i') && nn!=='h') { toks.push({t:'c',k:'ㅈ'}); i++; continue; }
+    if (c === 'z') { toks.push({t:'c',k:'ㅊ'}); i++; continue; }
+    if (c === 'h') { i++; continue; }
+    if (isVow(c)) { toks.push({t:'v',k:BASIC_VOW[normVow(c)]||'ㅏ'}); i++; continue; }
+    if (c === 'l') {
+      if (isVow(n)) { toks.push({t:'coda',k:'ㄹ'}); toks.push({t:'c',k:'ㄹ'}); i++; continue; }
+      toks.push({t:'coda',k:'ㄹ'}); i++; continue;
+    }
+    if (c === 'n') {
+      if (isVow(n)) { toks.push({t:'c',k:'ㄴ'}); i++; continue; }
+      toks.push({t:'coda',k:'ㄴ'}); i++; continue;
+    }
+    const cm = {b:'ㅂ',c:'ㅋ',d:'ㄷ',f:'ㅍ',g:'ㄱ',k:'ㅋ',m:'ㅁ',p:'ㅍ',q:'ㅋ',r:'ㄹ',s:'ㅅ',t:'ㅌ',v:'ㅂ',w:'ㅂ',x:'ㅅ',y:'ㅣ'};
+    if (cm[c]) { toks.push({t:'c',k:cm[c]}); i++; continue; }
+    toks.push({t:'pre',k:c}); i++;
+  }
+  return toks;
+}
+
+// GERMAN tokenizer
+function tokenizeDE(input) {
+  // Keep ä, ö, ü — normalize other accented vowels
+  const s = input.toLowerCase()
+    .replace(/[áàâã]/g,'a').replace(/[éèêë]/g,'e')
+    .replace(/[íìîï]/g,'i').replace(/[óòôõ]/g,'o')
+    .replace(/[úùû]/g,'u');
+  const toks = [], len = s.length;
+  let i = 0;
+  while (i < len) {
+    const c = s[i], n = s[i+1]||'', nn = s[i+2]||'';
+    if (c === ' ' || c === '-') { toks.push({t:'sp'}); i++; continue; }
+    const two = c+n, three = c+n+nn;
+    if (three === 'sch') { toks.push({t:'c',k:'ㅅ'}); /* treated as sh */ i+=3; continue; }
+    if (two === 'ch') {
+      // After back vowels (a,o,u) → ㅎ(흐), else → ㅎ(히)
+      toks.push({t:'c',k:'ㅎ'}); i+=2; continue;
+    }
+    if (two === 'ck') { toks.push({t:'c',k:'ㄱ'}); i+=2; continue; }
+    if (two === 'ph') { toks.push({t:'c',k:'ㅍ'}); i+=2; continue; }
+    if (two === 'th') { toks.push({t:'c',k:'ㅌ'}); i+=2; continue; }
+    if (two === 'qu') { toks.push({t:'c',k:'ㅋ'}); i+=2; continue; }
+    if (two === 'tz') { toks.push({t:'c',k:'ㅊ'}); i+=2; continue; }
+    if (two === 'ss' || c === 'ß') {
+      const skip = (c === 'ß') ? 1 : 2;
+      const last = (i+skip) >= len || s[i+skip]===' ';
+      if (last) { toks.push({t:'coda',k:'ㅅ'}); i+=skip; continue; }
+      toks.push({t:'c',k:'ㅅ'}); i+=skip; continue;
+    }
+    // German-specific vowels
+    if (c === 'ä') { toks.push({t:'v',k:'ㅐ'}); i++; continue; }
+    if (c === 'ö') { toks.push({t:'v',k:'ㅚ'}); i++; continue; }
+    if (c === 'ü') { toks.push({t:'v',k:'ㅟ'}); i++; continue; }
+    if (two === 'au') { toks.push({t:'v',k:'ㅏ'}); toks.push({t:'v',k:'ㅜ'}); i+=2; continue; }
+    if (two === 'äu' || two === 'eu') { toks.push({t:'v',k:'ㅗ'}); toks.push({t:'v',k:'ㅣ'}); i+=2; continue; }
+    if (two === 'ei' || two === 'ai') { toks.push({t:'v',k:'ㅏ'}); toks.push({t:'v',k:'ㅣ'}); i+=2; continue; }
+    if (two === 'ie') { toks.push({t:'v',k:'ㅣ'}); i+=2; continue; }
+    if (isVow(c)) { toks.push({t:'v',k:BASIC_VOW[normVow(c)]||'ㅏ'}); i++; continue; }
+    if (c === 'w') { toks.push({t:'c',k:'ㅂ'}); i++; continue; }
+    if (c === 'v') { toks.push({t:'c',k:'ㅍ'}); i++; continue; }
+    if (c === 'j') {
+      // German j = y sound; combine with following vowel
+      const yv = {a:'ㅑ',e:'ㅖ',i:'ㅣ',o:'ㅛ',u:'ㅠ'}[normVow(n)];
+      if (yv) { toks.push({t:'v',k:yv}); i+=2; }
+      else { toks.push({t:'v',k:'ㅣ'}); i++; }
+      continue;
+    }
+    if (c === 'r') {
+      const last = i === len-1 || s[i+1]===' ';
+      if (last) { toks.push({t:'pre',k:'르'}); i++; continue; }
+      toks.push({t:'c',k:'ㄹ'}); i++; continue;
+    }
+    if (c === 'l') {
+      if (isVow(n)) { toks.push({t:'coda',k:'ㄹ'}); toks.push({t:'c',k:'ㄹ'}); i++; continue; }
+      toks.push({t:'coda',k:'ㄹ'}); i++; continue;
+    }
+    if (c === 'n') {
+      if (isVow(n)) { toks.push({t:'c',k:'ㄴ'}); i++; continue; }
+      toks.push({t:'coda',k:'ㄴ'}); i++; continue;
+    }
+    const last = i === len-1 || s[i+1]===' ';
+    const cm = {b:'ㅂ',c:'ㅋ',d:'ㄷ',f:'ㅍ',g:'ㄱ',h:'ㅎ',k:'ㅋ',m:'ㅁ',p:'ㅍ',s:'ㅅ',t:'ㅌ',x:'ㄱ',y:'ㅣ',z:'ㅊ'};
+    if (cm[c]) {
+      if (last && 'mrg'.includes(c)) { toks.push({t:'coda',k:{m:'ㅁ',r:'ㄹ',g:'ㄱ'}[c]}); i++; continue; }
+      toks.push({t:'c',k:cm[c]}); i++; continue;
+    }
+    toks.push({t:'pre',k:c}); i++;
+  }
+  return toks;
+}
+
+// FRENCH tokenizer
+function tokenizeFR(input) {
+  const s = input.toLowerCase();
+  const toks = [], len = s.length;
+  let i = 0;
+  while (i < len) {
+    const c = s[i], n = s[i+1]||'', nn = s[i+2]||'';
+    if (c === ' ' || c === '-' || c === "'") { toks.push({t:'sp'}); i++; continue; }
+    const two = c+n, three = c+n+nn;
+    if (three === 'eau') { toks.push({t:'v',k:'ㅗ'}); i+=3; continue; }
+    if (two === 'au' || two === 'au') { toks.push({t:'v',k:'ㅗ'}); i+=2; continue; }
+    if (two === 'ai' || two === 'ay') { toks.push({t:'v',k:'ㅔ'}); i+=2; continue; }
+    if (two === 'ei') { toks.push({t:'v',k:'ㅔ'}); i+=2; continue; }
+    if (two === 'ou') { toks.push({t:'v',k:'ㅜ'}); i+=2; continue; }
+    if (two === 'oi') { toks.push({t:'v',k:'ㅗ'}); toks.push({t:'v',k:'ㅏ'}); i+=2; continue; }
+    if (two === 'eu' || two === 'œu') { toks.push({t:'v',k:'ㅚ'}); i+=2; continue; }
+    if (two === 'ch') { toks.push({t:'c',k:'ㅅ'}); i+=2; continue; } // French ch = sh
+    if (two === 'ph') { toks.push({t:'c',k:'ㅍ'}); i+=2; continue; }
+    if (two === 'gn') {
+      const yv = {a:'ㅑ',e:'ㅖ',i:'ㅣ',o:'ㅛ',u:'ㅠ'}[normVow(nn)];
+      if (yv) { toks.push({t:'pre',k:_syl('ㄴ',yv)}); i+=3; continue; }
+      toks.push({t:'pre',k:'뉴'}); i+=2; continue;
+    }
+    if (two === 'rr') { toks.push({t:'c',k:'ㄹ'}); i+=2; continue; }
+    if (two === 'qu') { toks.push({t:'c',k:'ㅋ'}); i+=2; continue; }
+    // Silent word-final consonants
+    const isWordFinal = (i === len-1) || s[i+1] === ' ';
+    if (isWordFinal && 'dtszpx'.includes(c) && c !== 'f' && c !== 'l' && c !== 'r') { i++; continue; }
+    // '-ent' ending is silent (common French)
+    if (s.slice(i) === 'ent' || s.slice(i) === 'ents') { i += s.slice(i).length; continue; }
+    if (c === 'h') { i++; continue; }
+    if (c === 'j') { toks.push({t:'c',k:'ㅈ'}); i++; continue; }
+    if (c === 'c') {
+      toks.push({t:'c',k:(n==='e'||n==='i'||n==='y')?'ㅅ':'ㅋ'}); i++; continue;
+    }
+    if (c === 'ç') { toks.push({t:'c',k:'ㅅ'}); i++; continue; }
+    if (c === 'g') {
+      toks.push({t:'c',k:(n==='e'||n==='i'||n==='y')?'ㅈ':'ㄱ'}); i++; continue;
+    }
+    if (c === 'r') {
+      if (isWordFinal) { toks.push({t:'pre',k:'르'}); i++; continue; }
+      toks.push({t:'c',k:'ㄹ'}); i++; continue;
+    }
+    if (c === 'è' || c === 'ê' || c === 'é') { toks.push({t:'v',k:'ㅔ'}); i++; continue; }
+    if (c === 'â' || c === 'à') { toks.push({t:'v',k:'ㅏ'}); i++; continue; }
+    if (c === 'î') { toks.push({t:'v',k:'ㅣ'}); i++; continue; }
+    if (c === 'ô') { toks.push({t:'v',k:'ㅗ'}); i++; continue; }
+    if (c === 'û' || c === 'ù') { toks.push({t:'v',k:'ㅜ'}); i++; continue; }
+    if (c === 'œ' || c === 'ë') { toks.push({t:'v',k:'ㅔ'}); i++; continue; }
+    if (c === 'e' && isWordFinal) { i++; continue; }
+    if (isVow(c)) { toks.push({t:'v',k:BASIC_VOW[normVow(c)]||'ㅏ'}); i++; continue; }
+    if (c === 'l') {
+      if (isVow(n)) { toks.push({t:'coda',k:'ㄹ'}); toks.push({t:'c',k:'ㄹ'}); i++; continue; }
+      toks.push({t:'coda',k:'ㄹ'}); i++; continue;
+    }
+    if (c === 'n') {
+      if (isVow(n)) { toks.push({t:'c',k:'ㄴ'}); i++; continue; }
+      toks.push({t:'coda',k:'ㄴ'}); i++; continue;
+    }
+    const cm = {b:'ㅂ',d:'ㄷ',f:'ㅍ',k:'ㅋ',m:'ㅁ',p:'ㅍ',s:'ㅅ',t:'ㅌ',v:'ㅂ',w:'ㅂ',x:'ㄱ',y:'ㅣ',z:'ㅈ'};
+    if (cm[c]) {
+      toks.push({t:'c',k:cm[c]}); i++; continue;
+    }
+    toks.push({t:'pre',k:c}); i++;
+  }
+  return toks;
+}
+
+// ================================================================
+// ENGLISH ENGINE
+// ================================================================
+const EN_LOOKUP = {
+  // Common English first names (all lowercase keys)
+  'aaron':'에런','abby':'애비','abigail':'애비게일','adam':'애덤','addison':'애디슨',
+  'adriana':'에이드리애나','agnes':'애그니스','aiden':'에이든','alan':'앨런','albert':'앨버트',
+  'alex':'앨렉스','alexander':'알렉산더','alexis':'앨렉시스','alice':'앨리스','alicia':'얼리샤',
+  'alison':'앨리슨','allison':'앨리슨','amanda':'어맨다','amber':'앰버','amy':'에이미',
+  'andrea':'앤드리어','andrew':'앤드루','angela':'앤절라','ann':'앤','anna':'애나',
+  'anne':'앤','anthony':'앤서니','aria':'아리아','ariana':'아리애나','arthur':'아서',
+  'ashley':'애슐리','austin':'오스틴','ava':'에이바','barbara':'바버라','barry':'배리',
+  'becky':'베키','ben':'벤','benjamin':'벤저민','beth':'베스','bob':'밥',
+  'brandon':'브랜던','brian':'브라이언','brittany':'브리트니','brook':'브룩','brooke':'브룩',
+  'caleb':'케일럽','cameron':'캐머런','carl':'칼','carlos':'카를로스','carol':'캐럴',
+  'caroline':'캐럴라인','casey':'케이시','catherine':'캐서린','charles':'찰스','charlotte':'샬럿',
+  'chelsea':'첼시','chris':'크리스','christian':'크리스천','christina':'크리스티나','christopher':'크리스토퍼',
+  'cindy':'신디','claire':'클레어','clark':'클라크','claudia':'클로디아','cody':'코디',
+  'colin':'콜린','conner':'코너','courtney':'코트니','crystal':'크리스털','dan':'댄',
+  'daniel':'대니얼','danielle':'대니엘','david':'데이비드','deborah':'데버러','diana':'다이애나',
+  'donald':'도널드','donna':'도나','dorothy':'도러시','doug':'더그','douglas':'더글러스',
+  'dylan':'딜런','ed':'에드','edward':'에드워드','eleanor':'엘리너','elizabeth':'엘리자베스',
+  'ella':'엘라','ellen':'엘런','emily':'에밀리','emma':'에마','eric':'에릭',
+  'ethan':'이선','evan':'에번','evelyn':'에벌린','faith':'페이스','fiona':'피오나',
+  'frank':'프랭크','fred':'프레드','gabriel':'게이브리얼','gary':'게리','george':'조지',
+  'grace':'그레이스','grant':'그랜트','gregory':'그레고리','hannah':'해나','harold':'해롤드',
+  'harry':'해리','heather':'헤더','helen':'헬런','henry':'헨리','holly':'홀리',
+  'ian':'이언','isabella':'이저벨라','jack':'잭','jackson':'잭슨','jacob':'제이컵',
+  'jake':'제이크','james':'제임스','jamie':'제이미','jane':'제인','janet':'재닛',
+  'jason':'제이슨','jennifer':'제니퍼','jessica':'제시카','john':'존','jonathan':'조너선',
+  'jordan':'조던','joseph':'조지프','joshua':'조슈아','julia':'줄리아','justin':'저스틴',
+  'karen':'캐런','kate':'케이트','kathleen':'캐슬린','katie':'케이티','keith':'키스',
+  'kelly':'켈리','kenneth':'케네스','kevin':'케빈','kim':'김','kimberly':'킴벌리',
+  'kyle':'카일','larry':'래리','laura':'로라','lauren':'로런','leah':'리아',
+  'lewis':'루이스','lily':'릴리','linda':'린다','lisa':'리사','logan':'로건',
+  'louis':'루이','luke':'루크','margaret':'마거릿','maria':'마리아','mark':'마크',
+  'mary':'메리','matthew':'매슈','melissa':'멀리사','michael':'마이클','michelle':'미셸',
+  'mike':'마이크','molly':'몰리','monica':'모니카','morgan':'모건','nancy':'낸시',
+  'natalie':'내털리','nathan':'네이선','nicholas':'니컬러스','nick':'닉','noah':'노아',
+  'olivia':'올리비아','oscar':'오스카','patricia':'패트리샤','patrick':'패트릭','paul':'폴',
+  'peter':'피터','philip':'필립','rachel':'레이철','raymond':'레이먼드','rebecca':'리베카',
+  'richard':'리처드','robert':'로버트','ronald':'로널드','rose':'로즈','ryan':'라이언',
+  'samuel':'새뮤얼','sandra':'샌드라','sarah':'새러','scott':'스콧','sean':'션',
+  'sharon':'섀런','sophia':'소피아','sophie':'소피','stephanie':'스테퍼니','stephen':'스티븐',
+  'steve':'스티브','steven':'스티번','susan':'수전','taylor':'테일러','thomas':'토머스',
+  'timothy':'티머시','tom':'톰','tyler':'타일러','victoria':'빅토리아','virginia':'버지니아',
+  'walter':'월터','wendy':'웬디','william':'윌리엄','zachary':'재커리','zoe':'조이',
+  // Surnames
+  'smith':'스미스','johnson':'존슨','williams':'윌리엄스','jones':'존스','brown':'브라운',
+  'davis':'데이비스','miller':'밀러','wilson':'윌슨','moore':'무어','taylor':'테일러',
+  'anderson':'앤더슨','jackson':'잭슨','white':'화이트','harris':'해리스','martin':'마틴',
+  'thompson':'톰슨','garcia':'가르시아','robinson':'로빈슨','lee':'리','walker':'워커',
+  'hall':'홀','allen':'앨런','young':'영','king':'킹','wright':'라이트',
+  'scott':'스콧','green':'그린','adams':'애덤스','baker':'베이커','clark':'클라크',
+  'hill':'힐','carter':'카터','mitchell':'미첼','nelson':'넬슨','roberts':'로버츠',
+  'turner':'터너','phillips':'필립스','campbell':'캠벨','parker':'파커','evans':'에번스',
+  'edwards':'에드워즈','collins':'콜린스','stewart':'스튜어트','morris':'모리스','morgan':'모건',
+  'cooper':'쿠퍼','reed':'리드','cox':'콕스','ward':'워드','james':'제임스',
+  'watson':'왓슨','brooks':'브룩스','murphy':'머피','price':'프라이스','kelly':'켈리',
+  'perry':'페리','butler':'버틀러','bell':'벨','rogers':'로저스','wood':'우드',
+};
+
+function transEnglish(input) {
+  const words = input.toLowerCase().split(/[\s\-]+/);
+  const parts = [];
+  for (const w of words) {
+    if (!w) continue;
+    if (EN_LOOKUP[w]) { parts.push(EN_LOOKUP[w]); continue; }
+    // Phonetic fallback
+    parts.push(englishHeuristic(w));
+  }
+  return parts.join(' ');
+}
+
+function englishHeuristic(w) {
+  // Basic English phonetic heuristic
+  let s = w.toLowerCase();
+  // Common name endings
+  s = s.replace(/tion$/,'션').replace(/sion$/,'전').replace(/tion/,'션');
+  s = s.replace(/ck$/,'크').replace(/ck/,'크');
+  s = s.replace(/ph/g,'f');
+  // Silent letters
+  s = s.replace(/^kn/,'n').replace(/^wr/,'r').replace(/^gn/,'n');
+  s = s.replace(/gh/g,'').replace(/mb$/,'m');
+  // Digraphs
+  s = s.replace(/sh/g,'シ').replace(/ch/g,'チ').replace(/th/g,'s').replace(/wh/g,'w');
+  // Diphthongs
+  s = s.replace(/oo/g,'u').replace(/ee|ea/g,'i').replace(/ou|ow/g,'au');
+  s = s.replace(/ai|ay/g,'ei').replace(/oi|oy/g,'oi').replace(/oa/g,'o');
+  s = s.replace(/ue/g,'u').replace(/ie$/,'i');
+  // Silent e
+  s = s.replace(/e$/,'');
+  // r-controlled
+  s = s.replace(/er|ir|ur/g,'eo').replace(/ar/g,'a').replace(/or/g,'o');
+  // Now convert remaining Latin letters to Korean phonemes
+  const TOKS = [];
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === 'シ') { TOKS.push({t:'c',k:'ㅅ'}); continue; }
+    if (c === 'チ') { TOKS.push({t:'c',k:'ㅊ'}); continue; }
+    if ('aeiou'.includes(c)) {
+      TOKS.push({t:'v',k:{a:'ㅏ',e:'ㅔ',i:'ㅣ',o:'ㅗ',u:'ㅜ'}[c]}); continue;
+    }
+    const cm = {b:'ㅂ',c:'ㅋ',d:'ㄷ',f:'ㅍ',g:'ㄱ',h:'ㅎ',j:'ㅈ',k:'ㅋ',l:'ㄹ',m:'ㅁ',n:'ㄴ',p:'ㅍ',q:'ㅋ',r:'ㄹ',s:'ㅅ',t:'ㅌ',v:'ㅂ',w:'ㅂ',x:'ㄱ',y:'ㅣ',z:'ㅈ'};
+    if (cm[c]) TOKS.push({t:'c',k:cm[c]});
+    else TOKS.push({t:'pre',k:c});
+  }
+  return _assemble(TOKS) || w;
+}
+
+// ================================================================
+// MAIN CONTROLLER
+// ================================================================
+const LANG_INFO = {
+  en: { label:'🇺🇸 영어', hint:'영어 이름을 로마자로 입력하세요', exLabel:'영어 → 한국어 외래어 표기', rule:'영어 외래어 표기법 (국립국어원)' },
+  de: { label:'🇩🇪 독일어', hint:'독일어 이름을 로마자로 입력하세요 (예: Bach, Mozart)', exLabel:'독일어 → 한국어 외래어 표기', rule:'독일어 외래어 표기법 (국립국어원)' },
+  fr: { label:'🇫🇷 프랑스어', hint:'프랑스어 이름을 로마자로 입력하세요 (예: Pierre, Marie)', exLabel:'프랑스어 → 한국어 외래어 표기', rule:'프랑스어 외래어 표기법 (국립국어원)' },
+  es: { label:'🇪🇸 스페인어', hint:'스페인어 이름을 로마자로 입력하세요 (예: García, José)', exLabel:'스페인어 → 한국어 외래어 표기', rule:'스페인어 외래어 표기법 (국립국어원)' },
+  it: { label:'🇮🇹 이탈리아어', hint:'이탈리아어 이름을 로마자로 입력하세요 (예: Dante, Roma)', exLabel:'이탈리아어 → 한국어 외래어 표기', rule:'이탈리아어 외래어 표기법 (국립국어원)' },
+  ja: { label:'🇯🇵 일본어', hint:'일본어 이름을 히라가나·가타카나 또는 로마자로 입력하세요', exLabel:'일본어 → 한국어 외래어 표기', rule:'일본어 외래어 표기법 (국립국어원)' },
+  zh: { label:'🇨🇳 중국어', hint:'중국어 이름을 병음(Pinyin)으로 입력하세요 (예: Beijing, Zhang Wei)', exLabel:'중국어 → 한국어 외래어 표기', rule:'중국어 외래어 표기법 (국립국어원)' },
+};
+
+let selectedLang = 'en';
+
+function onLangChange() {
+  selectedLang = document.getElementById('langSelect').value;
+  document.getElementById('nameInput').placeholder = LANG_INFO[selectedLang].hint;
+  document.getElementById('langHint').textContent = LANG_INFO[selectedLang].hint;
+  hideResult(); hideError();
+}
+
+function convert() {
+  const input = document.getElementById('nameInput').value.trim();
+  if (!input) { showError('이름을 입력해 주세요.'); return; }
+  hideError();
+
+  let korean = '';
+  try {
+    if (selectedLang === 'ja') korean = transJapanese(input);
+    else if (selectedLang === 'zh') korean = transChineseRaw(input);
+    else if (selectedLang === 'es') korean = _assemble(tokenizeES(input), true);
+    else if (selectedLang === 'it') korean = _assemble(tokenizeIT(input), true);
+    else if (selectedLang === 'de') korean = _assemble(tokenizeDE(input), true);
+    else if (selectedLang === 'fr') korean = _assemble(tokenizeFR(input), true);
+    else korean = transEnglish(input);
+  } catch(e) { showError('변환 중 오류가 발생했습니다: ' + e.message); return; }
+
+  if (!korean || korean.trim() === '') { showError('변환 결과가 없습니다. 입력을 확인해 주세요.'); return; }
+
+  renderResult(input, korean.trim());
+}
+
+function renderResult(original, korean) {
+  const info = LANG_INFO[selectedLang];
+  document.getElementById('resultLang').textContent = info.exLabel;
+  document.getElementById('resultKorean').textContent = korean;
+
+  // Syllable badges
+  const syllables = [...korean].filter(c => c !== ' ');
+  const el = document.getElementById('resultSyllables');
+  el.innerHTML = '';
+  syllables.forEach((s, i) => {
+    const b = document.createElement('span');
+    b.className = 'syllable'; b.textContent = s;
+    el.appendChild(b);
+    if (i < syllables.length - 1) {
+      const sep = document.createElement('span');
+      sep.className = 'syllable-sep'; sep.textContent = '·';
+      el.appendChild(sep);
+    }
+  });
+
+  document.getElementById('resultPronunciation').textContent =
+    '[ ' + syllables.join('·') + ' ]';
+
+  document.getElementById('resultExplanation').innerHTML =
+    `<strong>${original}</strong>을(를) ${info.rule}에 따라 변환한 결과입니다.`;
+
+  document.getElementById('resultCard').classList.add('show');
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg; el.classList.add('show');
+}
+function hideError() { document.getElementById('errorMsg').classList.remove('show'); }
+function hideResult() { document.getElementById('resultCard').classList.remove('show'); }
+</script>
+</body>
+</html>
