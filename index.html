@@ -82,11 +82,7 @@
     .result-label { font-size:.78rem; font-weight:700; color:var(--primary); text-transform:uppercase; letter-spacing:.1em; margin-bottom:.75rem; }
     .result-korean { font-size:3.2rem; font-weight:900; color:var(--primary-dark); letter-spacing:.05em; line-height:1.1; margin-bottom:.75rem; }
 
-    .syllables { display:flex; justify-content:center; flex-wrap:wrap; gap:.35rem; margin-bottom:1.25rem; }
-    .syllable { background:var(--primary); color:#fff; border-radius:8px; padding:.28rem .65rem; font-size:1.05rem; font-weight:700; }
-    .syllable-sep { color:#a5b4fc; font-size:1.2rem; align-self:center; }
-
-    .result-pronunciation { font-size:1.1rem; color:var(--text-muted); margin-bottom:1.25rem; font-style:italic; }
+    .result-pronunciation { font-size:1rem; color:var(--text-muted); margin-bottom:1.25rem; font-style:italic; letter-spacing:.03em; }
     .divider { height:1px; background:#c7d2fe; margin:1rem 0; }
     .result-explanation { font-size:.88rem; color:var(--text-muted); line-height:1.6; text-align:left; }
     .result-explanation strong { color:var(--text); }
@@ -127,7 +123,6 @@
   <div class="result-card" id="resultCard">
     <div class="result-label" id="resultLang"></div>
     <div class="result-korean" id="resultKorean"></div>
-    <div class="syllables" id="resultSyllables"></div>
     <div class="result-pronunciation" id="resultPronunciation"></div>
     <div class="divider"></div>
     <div class="result-explanation" id="resultExplanation"></div>
@@ -919,28 +914,367 @@ function convert() {
   renderResult(input, korean.trim());
 }
 
+// ================================================================
+// Text phonetic functions — English-style respelling [syl-uh-bul]
+// ================================================================
+
+// ---- helpers ----
+function _phSyllabify(word, vowelSet) {
+  // Very naive syllabifier: split at vowel/consonant boundaries
+  const v = vowelSet || new Set('aeiouy');
+  const w = word.toLowerCase();
+  const syls = [];
+  let cur = '', prev = false;
+  for (let i = 0; i < w.length; i++) {
+    const ch = w[i], isV = v.has(ch);
+    if (isV && !prev && cur.length > 0) { syls.push(cur); cur = ch; }
+    else { cur += ch; }
+    prev = isV;
+  }
+  if (cur) syls.push(cur);
+  return syls.length ? syls : [word];
+}
+
+function _phCapFirst(syls) {
+  // Capitalize first syllable as primary stress
+  return syls.map((s,i) => i===0 ? s.toUpperCase() : s);
+}
+
+function _phFmt(syls) {
+  return '[' + _phCapFirst(syls).join('-') + ']';
+}
+
+// ---- English ----
+const EN_PHONETIC = {
+  'michael':'MY-kuhl','jennifer':'JEN-ih-fer','jessica':'JES-ih-kuh',
+  'christopher':'KRIS-toh-fer','matthew':'MATH-yoo','ashley':'ASH-lee',
+  'joshua':'JOSH-yoo-uh','amanda':'uh-MAN-duh','daniel':'DAN-yuhl',
+  'andrew':'AN-droo','james':'JAYMZ','robert':'ROB-ert',
+  'john':'JON','william':'WIL-yuhm','david':'DAY-vid',
+  'richard':'RICH-erd','thomas':'TOM-uhs','charles':'CHARLZ',
+  'joseph':'JOH-zef','patricia':'puh-TRISH-uh','linda':'LIN-duh',
+  'barbara':'BAR-buh-ruh','elizabeth':'ih-LIZ-uh-beth','mary':'MAIR-ee',
+  'susan':'SOO-zuhn','margaret':'MAR-guh-ret','dorothy':'DOR-uh-thee',
+  'lisa':'LEE-suh','nancy':'NAN-see','karen':'KAIR-uhn',
+  'betty':'BET-ee','helen':'HEL-uhn','sandra':'SAN-druh',
+  'donna':'DON-uh','carol':'KAIR-uhl','ruth':'ROOTH',
+  'sharon':'SHAIR-uhn','michelle':'mih-SHEL','laura':'LOR-uh',
+  'sarah':'SAIR-uh','kimberly':'KIM-ber-lee','deborah':'DEB-uh-ruh',
+  'jessica':'JES-ih-kuh','shirley':'SHUR-lee','angela':'AN-juh-luh',
+  'melissa':'muh-LIS-uh','brenda':'BREN-duh','amy':'AY-mee',
+  'anna':'AN-uh','rebecca':'rih-BEK-uh','virginia':'ver-JIN-ee-uh',
+  'kathleen':'kath-LEEN','pamela':'PAM-uh-luh','martha':'MAR-thuh',
+  'debra':'DEB-ruh','amanda':'uh-MAN-duh','stephanie':'STEF-uh-nee',
+  'carolyn':'KAIR-uh-lin','janet':'JAN-it','maria':'muh-REE-uh',
+  'catherine':'KATH-uh-rin','heather':'HETH-er','diane':'dy-AN',
+  'julie':'JOO-lee','joyce':'JOYS','victoria':'vik-TOR-ee-uh',
+  'kelly':'KEL-ee','christina':'kris-TEE-nuh','joan':'JON',
+  'evelyn':'EV-uh-lin','olivia':'oh-LIV-ee-uh','judith':'JOO-dith',
+  'megan':'MEG-uhn','cheryl':'SHAIR-uhl','rachel':'RAY-chuhl',
+  'alice':'AL-is','jean':'JEEN','julia':'JOO-lee-uh',
+  'grace':'GRAYS','denise':'duh-NEES','amber':'AM-ber',
+  'marilyn':'MAIR-uh-lin','beverly':'BEV-er-lee','danielle':'dan-YEL',
+  'theresa':'tuh-REE-suh','sophia':'soh-FEE-uh','emma':'EM-uh',
+  'george':'JORJ','henry':'HEN-ree','edward':'ED-werd',
+  'brian':'BRY-uhn','kevin':'KEV-in','steven':'STEE-vuhn',
+  'timothy':'TIM-uh-thee','ronald':'RON-uhld','kenneth':'KEN-ith',
+  'mark':'MARK','donald':'DON-uhld','paul':'PAWL',
+  'jason':'JAY-suhn','jeffrey':'JEF-ree','ryan':'RY-uhn',
+  'jacob':'JAY-kuhb','gary':'GAIR-ee','eric':'EHR-ik',
+  'jonathan':'JON-uh-thuhn','stephen':'STEE-vuhn','larry':'LAIR-ee',
+  'scott':'SKOT','frank':'FRANK','raymond':'RAY-muhnd',
+  'gregory':'GREG-uh-ree','samuel':'SAM-yoo-uhl','benjamin':'BEN-juh-min',
+  'patrick':'PAT-rik','jack':'JAK','dennis':'DEN-is',
+  'jerry':'JEH-ree','alexander':'al-ig-ZAN-der','tyler':'TY-ler',
+  'aaron':'AIR-uhn','henry':'HEN-ree','douglas':'DUG-luhs',
+  'nicholas':'NIK-uh-luhs','peter':'PEE-ter','adam':'AD-uhm',
+  'nathan':'NAY-thuhn','zachary':'ZAK-uh-ree','kyle':'KYL',
+  'noah':'NOH-uh','ethan':'EE-thuhn','austin':'AW-stuhn',
+  'christian':'KRIS-chuhn','aiden':'AY-duhn','justin':'JUS-tin',
+  'oliver':'OL-ih-ver','liam':'LEE-uhm','mason':'MAY-suhn',
+  'ian':'EE-uhn','caleb':'KAY-luhb','lucas':'LOO-kuhs',
+  'dylan':'DIL-uhn','logan':'LOH-guhn','carter':'KAR-ter',
+  'elijah':'ih-LY-juh','sebastian':'suh-BAS-chuhn','jack':'JAK',
+  'james':'JAYMZ','owen':'OH-uhn','gabriel':'GAY-bree-uhl',
+  'julian':'JOO-lee-uhn','leo':'LEE-oh','lincoln':'LINK-uhn',
+  'anthony':'AN-thuh-nee','charles':'CHARLZ','joshua':'JOSH-yoo-uh',
+  'luke':'LOOK','christopher':'KRIS-toh-fer'
+};
+
+function enPhonetic(input) {
+  const words = input.trim().split(/\s+/);
+  const parts = words.map(w => {
+    const key = w.toLowerCase();
+    if (EN_PHONETIC[key]) return EN_PHONETIC[key];
+    // Basic heuristic: consonant cluster + vowel syllabification
+    const s = key
+      .replace(/tion/g,'shuhn').replace(/sion/g,'zhuhn')
+      .replace(/ture/g,'cher').replace(/ph/g,'f')
+      .replace(/ck/g,'k').replace(/wh/g,'w')
+      .replace(/ee|ea/g,'ee').replace(/oo/g,'oo')
+      .replace(/ai|ay/g,'ay').replace(/oi|oy/g,'oy')
+      .replace(/ou|ow/g,'ow').replace(/au|aw/g,'aw')
+      .replace(/th/g,'th').replace(/sh/g,'sh').replace(/ch/g,'ch')
+      .replace(/e$/,'');
+    const syls = _phSyllabify(s);
+    return _phCapFirst(syls).join('-');
+  });
+  return '[' + parts.join(' ') + ']';
+}
+
+// ---- Spanish ----
+function esPhonetic(input) {
+  const words = input.trim().split(/\s+/);
+  const parts = words.map(w => {
+    const s = w.toLowerCase()
+      .replace(/[áàâã]/g,'a').replace(/[éèêë]/g,'e').replace(/[íìîï]/g,'i')
+      .replace(/[óòôõ]/g,'o').replace(/[úùûü]/g,'u').replace(/ý/g,'i');
+    let r = '', i = 0, len = s.length;
+    while (i < len) {
+      const c = s[i], n = s[i+1]||'', nn = s[i+2]||'';
+      if (c+n === 'ch') { r += 'ch'; i+=2; continue; }
+      if (c+n === 'll') { r += 'y'; i+=2; continue; }
+      if (c+n === 'rr') { r += 'r'; i+=2; continue; }
+      if (c+n === 'qu') { r += 'k'; i+=2; continue; }
+      if (c+n === 'gu' && (nn==='e'||nn==='i')) { r += 'g'; i+=2; continue; }
+      if (c === 'ñ') { r += 'ny'; i++; continue; }
+      if (c === 'h') { i++; continue; }
+      if (c === 'j' || (c==='g' && (n==='e'||n==='i'))) { r += 'h'; i++; continue; }
+      if (c === 'c' && (n==='e'||n==='i')) { r += 's'; i++; continue; }
+      if (c === 'c') { r += 'k'; i++; continue; }
+      if (c === 'z') { r += 's'; i++; continue; }
+      if (c === 'v') { r += 'b'; i++; continue; }
+      if (c === 'a') { r += 'ah'; i++; continue; }
+      if (c === 'e') { r += (i===len-1)?'eh':'eh'; i++; continue; }
+      if (c === 'i') { r += 'ee'; i++; continue; }
+      if (c === 'o') { r += 'oh'; i++; continue; }
+      if (c === 'u') { r += 'oo'; i++; continue; }
+      r += c; i++;
+    }
+    // syllabify on vowel clusters
+    const syls = r.match(/[^aeiou]*(?:ah|eh|ee|oh|oo|[aeiou])[^aeiou]*/g) || [r];
+    return _phCapFirst(syls).join('-');
+  });
+  return '[' + parts.join(' ') + ']';
+}
+
+// ---- Italian ----
+function itPhonetic(input) {
+  const words = input.trim().split(/\s+/);
+  const parts = words.map(w => {
+    const s = w.toLowerCase()
+      .replace(/[áàâãä]/g,'a').replace(/[éèêë]/g,'e').replace(/[íìîï]/g,'i')
+      .replace(/[óòôõö]/g,'o').replace(/[úùûü]/g,'u').replace(/ý/g,'i');
+    let r = '', i = 0, len = s.length;
+    while (i < len) {
+      const c = s[i], n = s[i+1]||'', nn = s[i+2]||'';
+      if (c+n+nn === 'sci') { r += 'shee'; i+=3; continue; }
+      if (c+n+nn === 'gli') { r += 'lyee'; i+=3; continue; }
+      if (c+n === 'ch') { r += 'k'; i+=2; continue; }
+      if (c+n === 'gh') { r += 'g'; i+=2; continue; }
+      if (c+n === 'gn') { r += 'ny'; i+=2; continue; }
+      if (c+n === 'qu') { r += 'kw'; i+=2; continue; }
+      if (c==='c' && (n==='e'||n==='i')) { r += 'ch'; i++; continue; }
+      if (c==='g' && (n==='e'||n==='i')) { r += 'j'; i++; continue; }
+      if (c==='z') { r += 'ts'; i++; continue; }
+      if (c==='h') { i++; continue; }
+      if (c === 'a') { r += 'ah'; i++; continue; }
+      if (c === 'e') { r += 'eh'; i++; continue; }
+      if (c === 'i') { r += 'ee'; i++; continue; }
+      if (c === 'o') { r += 'oh'; i++; continue; }
+      if (c === 'u') { r += 'oo'; i++; continue; }
+      r += c; i++;
+    }
+    const syls = r.match(/[^aeiou]*(?:ah|eh|ee|oh|oo|[aeiou])[^aeiou]*/g) || [r];
+    return _phCapFirst(syls).join('-');
+  });
+  return '[' + parts.join(' ') + ']';
+}
+
+// ---- German ----
+function dePhonetic(input) {
+  const words = input.trim().split(/\s+/);
+  const parts = words.map(w => {
+    const s = w.toLowerCase();
+    let r = '', i = 0, len = s.length;
+    while (i < len) {
+      const c = s[i], n = s[i+1]||'', nn = s[i+2]||'';
+      if (c+n+nn === 'sch') { r += 'sh'; i+=3; continue; }
+      if (c+n === 'ch') { r += 'kh'; i+=2; continue; }
+      if (c+n === 'ck') { r += 'k'; i+=2; continue; }
+      if (c+n === 'ph') { r += 'f'; i+=2; continue; }
+      if (c+n === 'th') { r += 't'; i+=2; continue; }
+      if (c+n === 'tz') { r += 'ts'; i+=2; continue; }
+      if (c+n === 'au') { r += 'ow'; i+=2; continue; }
+      if (c+n === 'ei' || c+n === 'ai') { r += 'eye'; i+=2; continue; }
+      if (c+n === 'eu' || c+n === 'äu') { r += 'oy'; i+=2; continue; }
+      if (c+n === 'ie') { r += 'ee'; i+=2; continue; }
+      if (c+n === 'ss') { r += 's'; i+=2; continue; }
+      if (c === 'ß') { r += 's'; i++; continue; }
+      if (c === 'ä') { r += 'ay'; i++; continue; }
+      if (c === 'ö') { r += 'ur'; i++; continue; }
+      if (c === 'ü') { r += 'ue'; i++; continue; }
+      if (c === 'a') { r += 'ah'; i++; continue; }
+      if (c === 'e') { r += 'eh'; i++; continue; }
+      if (c === 'i') { r += 'ih'; i++; continue; }
+      if (c === 'o') { r += 'oh'; i++; continue; }
+      if (c === 'u') { r += 'oo'; i++; continue; }
+      if (c === 'j') { r += 'y'; i++; continue; }
+      if (c === 'w') { r += 'v'; i++; continue; }
+      if (c === 'v') { r += 'f'; i++; continue; }
+      if (c === 'z') { r += 'ts'; i++; continue; }
+      r += c; i++;
+    }
+    const syls = r.match(/[^aeiou]*(?:ah|eh|ih|oh|oo|ow|oy|ay|ur|ue|eye|ee|[aeiou])[^aeiou]*/g) || [r];
+    return _phCapFirst(syls).join('-');
+  });
+  return '[' + parts.join(' ') + ']';
+}
+
+// ---- French ----
+function frPhonetic(input) {
+  const words = input.trim().split(/\s+/);
+  const parts = words.map(w => {
+    const s = w.toLowerCase();
+    let r = '', i = 0, len = s.length;
+    const last = (idx) => idx === len-1 || s[idx+1]===' ';
+    while (i < len) {
+      const c = s[i], n = s[i+1]||'', nn = s[i+2]||'';
+      if (c+n+nn === 'eau') { r += 'oh'; i+=3; continue; }
+      if (c+n === 'ou') { r += 'oo'; i+=2; continue; }
+      if (c+n === 'au') { r += 'oh'; i+=2; continue; }
+      if (c+n === 'ai' || c+n === 'ei' || c+n === 'ay') { r += 'ay'; i+=2; continue; }
+      if (c+n === 'oi') { r += 'wah'; i+=2; continue; }
+      if (c+n === 'eu' || c+n === 'œu') { r += 'uh'; i+=2; continue; }
+      if (c+n === 'ch') { r += 'sh'; i+=2; continue; }
+      if (c+n === 'ph') { r += 'f'; i+=2; continue; }
+      if (c+n === 'gn') { r += 'ny'; i+=2; continue; }
+      if (c+n === 'rr' || c+n === 'qu') { r += (c==='r')?'r':'k'; i+=2; continue; }
+      if (c === 'h') { i++; continue; }
+      if (c === 'e' && last(i)) { i++; continue; }
+      if (last(i) && 'dtszpx'.includes(c)) { i++; continue; }
+      if (c === 'è' || c === 'ê' || c === 'é') { r += 'ay'; i++; continue; }
+      if (c === 'â' || c === 'à') { r += 'ah'; i++; continue; }
+      if (c === 'î') { r += 'ee'; i++; continue; }
+      if (c === 'ô') { r += 'oh'; i++; continue; }
+      if (c === 'û' || c === 'ù') { r += 'oo'; i++; continue; }
+      if (c === 'œ' || c === 'ë') { r += 'ay'; i++; continue; }
+      if (c === 'a') { r += 'ah'; i++; continue; }
+      if (c === 'e') { r += 'uh'; i++; continue; }
+      if (c === 'i') { r += 'ee'; i++; continue; }
+      if (c === 'o') { r += 'oh'; i++; continue; }
+      if (c === 'u') { r += 'oo'; i++; continue; }
+      if (c === 'j') { r += 'zh'; i++; continue; }
+      if (c === 'g' && (n==='e'||n==='i')) { r += 'zh'; i++; continue; }
+      if (c === 'r') { r += (last(i))?'r':'r'; i++; continue; }
+      r += c; i++;
+    }
+    const syls = r.match(/[^aeiou]*(?:ah|ay|ee|oh|oo|uh|wah|zh|sh|[aeiou])[^aeiou]*/g) || [r];
+    return _phCapFirst(syls).join('-');
+  });
+  return '[' + parts.join(' ') + ']';
+}
+
+// ---- Japanese (kana → romaji phonetic) ----
+const KANA_ROMAJI = {
+  'あ':'ah','い':'ee','う':'oo','え':'eh','お':'oh',
+  'か':'kah','き':'kee','く':'koo','け':'keh','こ':'koh',
+  'さ':'sah','し':'shee','す':'soo','せ':'seh','そ':'soh',
+  'た':'tah','ち':'chee','つ':'tsoo','て':'teh','と':'toh',
+  'な':'nah','に':'nee','ぬ':'noo','ね':'neh','の':'noh',
+  'は':'hah','ひ':'hee','ふ':'foo','へ':'heh','ほ':'hoh',
+  'ま':'mah','み':'mee','む':'moo','め':'meh','も':'moh',
+  'や':'yah','ゆ':'yoo','よ':'yoh',
+  'ら':'rah','り':'ree','る':'roo','れ':'reh','ろ':'roh',
+  'わ':'wah','を':'oh','ん':'n',
+  'が':'gah','ぎ':'gee','ぐ':'goo','げ':'geh','ご':'goh',
+  'ざ':'zah','じ':'jee','ず':'zoo','ぜ':'zeh','ぞ':'zoh',
+  'だ':'dah','ぢ':'jee','づ':'zoo','で':'deh','ど':'doh',
+  'ば':'bah','び':'bee','ぶ':'boo','べ':'beh','ぼ':'boh',
+  'ぱ':'pah','ぴ':'pee','ぷ':'poo','ぺ':'peh','ぽ':'poh',
+  'きゃ':'kyah','きゅ':'kyoo','きょ':'kyoh',
+  'しゃ':'shah','しゅ':'shoo','しょ':'shoh',
+  'ちゃ':'chah','ちゅ':'choo','ちょ':'choh',
+  'にゃ':'nyah','にゅ':'nyoo','にょ':'nyoh',
+  'ひゃ':'hyah','ひゅ':'hyoo','ひょ':'hyoh',
+  'みゃ':'myah','みゅ':'myoo','みょ':'myoh',
+  'りゃ':'ryah','りゅ':'ryoo','りょ':'ryoh',
+  'ぎゃ':'gyah','ぎゅ':'gyoo','ぎょ':'gyoh',
+  'じゃ':'jah','じゅ':'joo','じょ':'joh',
+  'びゃ':'byah','びゅ':'byoo','びょ':'byoh',
+  'ぴゃ':'pyah','ぴゅ':'pyoo','ぴょ':'pyoh',
+};
+// Katakana → hiragana offset
+function _kataToHira(c) {
+  const code = c.charCodeAt(0);
+  return (code >= 0x30A1 && code <= 0x30F6) ? String.fromCharCode(code - 0x60) : c;
+}
+
+function jaPhonetic(input) {
+  // Convert katakana to hiragana first
+  const s = [...input].map(_kataToHira).join('');
+  let result = '', i = 0;
+  while (i < s.length) {
+    const c = s[i], n = s[i+1]||'';
+    if (c === 'っ') {
+      // Geminate: double next consonant
+      const nextRom = KANA_ROMAJI[n] || '';
+      result += (nextRom[0]||'t'); i++; continue;
+    }
+    if (c === 'ん') { result += 'n'; i++; continue; }
+    if (c === 'ー') { i++; continue; }
+    // Try 2-char compound first
+    const two = c+n;
+    if (KANA_ROMAJI[two]) { result += '-' + KANA_ROMAJI[two]; i+=2; continue; }
+    if (KANA_ROMAJI[c]) { result += '-' + KANA_ROMAJI[c]; i++; continue; }
+    result += c; i++;
+  }
+  const clean = result.replace(/^-/,'').replace(/-+/g,'-');
+  const syls = clean.split('-');
+  return '[' + _phCapFirst(syls).join('-') + ']';
+}
+
+// ---- Chinese (pinyin formatting) ----
+const ZH_PH_MAP = {'zh':'j','ch':'ch','sh':'sh','x':'sh','q':'ch','c':'ts','z':'dz'};
+function zhPhonetic(input) {
+  const words = input.trim().split(/\s+/);
+  const parts = words.map(w => {
+    const s = w.toLowerCase()
+      .replace(/[āáǎà]/g,'a').replace(/[ēéěè]/g,'e').replace(/[īíǐì]/g,'i')
+      .replace(/[ōóǒò]/g,'o').replace(/[ūúǔù]/g,'u').replace(/[ǖǘǚǜ]/g,'u');
+    let r = s;
+    for (const [from, to] of Object.entries(ZH_PH_MAP)) {
+      r = r.replace(new RegExp(from, 'g'), to);
+    }
+    // syllabify by pinyin vowel blocks
+    const syls = r.match(/[^aeiouv]*(?:ao|ai|ei|ou|ia|ie|ua|ue|uo|[aeiouv])[^aeiouv]*/g) || [r];
+    return _phCapFirst(syls).join('-');
+  });
+  return '[' + parts.join(' ') + ']';
+}
+
+// ---- Dispatcher ----
+function toPhonetic(input, lang) {
+  if (!input) return '';
+  switch(lang) {
+    case 'en': return enPhonetic(input);
+    case 'es': return esPhonetic(input);
+    case 'it': return itPhonetic(input);
+    case 'de': return dePhonetic(input);
+    case 'fr': return frPhonetic(input);
+    case 'ja': return jaPhonetic(input);
+    case 'zh': return zhPhonetic(input);
+    default:   return '';
+  }
+}
+
 function renderResult(original, korean) {
   const info = LANG_INFO[selectedLang];
   document.getElementById('resultLang').textContent = info.exLabel;
   document.getElementById('resultKorean').textContent = korean;
 
-  // Syllable badges
-  const syllables = [...korean].filter(c => c !== ' ');
-  const el = document.getElementById('resultSyllables');
-  el.innerHTML = '';
-  syllables.forEach((s, i) => {
-    const b = document.createElement('span');
-    b.className = 'syllable'; b.textContent = s;
-    el.appendChild(b);
-    if (i < syllables.length - 1) {
-      const sep = document.createElement('span');
-      sep.className = 'syllable-sep'; sep.textContent = '·';
-      el.appendChild(sep);
-    }
-  });
-
   document.getElementById('resultPronunciation').textContent =
-    '[ ' + syllables.join('·') + ' ]';
+    toPhonetic(original, selectedLang);
 
   document.getElementById('resultExplanation').innerHTML =
     `<strong>${original}</strong>을(를) ${info.rule}에 따라 변환한 결과입니다.`;
